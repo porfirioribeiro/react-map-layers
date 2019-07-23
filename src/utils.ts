@@ -2,7 +2,7 @@ type DebounceFn = (...args: any[]) => any;
 
 export function debounce(func: DebounceFn, wait: number) {
   let timeout = 0;
-  return function(...args: any[]) {
+  return function(this: any, ...args: any[]) {
     const context = this;
     clearTimeout(timeout);
     timeout = setTimeout(() => func.apply(context, args), wait);

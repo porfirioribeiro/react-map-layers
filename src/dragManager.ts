@@ -1,12 +1,8 @@
 import { RefObject } from "react";
 
-interface DragManagerOptions {
-  // containerRef
-}
+export type DragManager =ReturnType<typeof dragManager>
 
-export interface DragManager {}
-
-export function DragManager(ref: RefObject<HTMLDivElement>) {
+export function dragManager(ref: RefObject<HTMLDivElement>) {
   let active = false;
   let currentX: number;
   let currentY: number;

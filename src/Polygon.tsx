@@ -1,7 +1,12 @@
 import React, { useContext } from "react";
 import { MapContext } from "./context";
+import { TPoint } from "./types";
 
-export function Polygon({ coords }) {
+interface PolygonProps {
+  coords: TPoint[];
+}
+
+export function Polygon({ coords }: PolygonProps) {
   const map = useContext(MapContext);
 
   const d = coords

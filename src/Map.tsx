@@ -1,9 +1,10 @@
 import React, { Component, CSSProperties } from "react";
 import { MapContext } from "./context";
 import { MapWarning } from "./MapWarning";
-import { DragManager } from "./dragManager";
+import { dragManager, DragManager } from "./dragManager";
 
 import { parentPosition, parentHasClass, debounce } from "./utils";
+import { TPoint, TMinMax } from "./types";
 
 const ANIMATION_TIME = 300;
 const DIAGONAL_THROW_TIME = 1500;
@@ -74,8 +75,6 @@ function srcSet(dprs: number[], url: MapURL, x: number, y: number, z: number) {
     .join(", ");
 }
 
-type TPoint = [number, number];
-
 interface MapProps {
   center?: TPoint;
   defaultCenter?: TPoint;
@@ -92,19 +91,19 @@ interface MapProps {
   defaultHeight?: number;
 
   provider?: () => string;
-  dprs?: [];
+  dprs: number[];
   children?: React.ReactNode;
 
   animate?: boolean;
-  animateMaxScreens?: number;
+  animateMaxScreens: number;
 
-  minZoom?: number;
-  maxZoom?: number;
+  minZoom: number;
+  maxZoom: number;
 
   metaWheelZoom?: boolean;
-  metaWheelZoomWarning?: string;
+  metaWheelZoomWarning: string;
   twoFingerDrag?: boolean;
-  twoFingerDragWarning?: string;
+  twoFingerDragWarning: string;
 
   zoomSnap?: boolean;
   mouseEvents?: boolean;
@@ -119,9 +118,24 @@ interface MapProps {
   limitBounds?: "center" | "edge";
 }
 
+export interface MapState {
+  zoom: number;
+  center: TPoint;
+  width: number;
+  height: number;
+  zoomDelta: number;
+  pixelDelta: null | any;
+  oldTiles: any[];
+  showWarning: boolean;
+  warningType: null | any;
+  dragManager: DragManager;
+  latLngToPixel(latLng: TPoint, center?: TPoint, zoom?: number): TPoint;
+  pixelToLatLng(latLng: TPoint, center?: TPoint, zoom?: number): TPoint;
+}
+
 const wae = window.addEventListener;
 const wre = window.removeEventListener;
-export default class Map extends Component<MapProps> {
+export default class Map extends Component<MapProps, MapState> {
   static defaultProps = {
     animate: true,
     metaWheelZoom: false,
@@ -153,40 +167,41 @@ export default class Map extends Component<MapProps> {
     DEBOUNCE_DELAY
   );
 
-  _dragStart = null;
+  _dragStart!: TPoint;
   _mouseDown = false;
-  _moveEvents = [];
-  _touchStartPixel = null;
+  _moveEvents: { timestamp: number; coords: TPoint }[] = [];
+  _touchStartPixel: TPoint[] | null = null;
 
   _isAnimating = false;
-  _animationStart = null;
-  _animationEnd = null;
-  _centerTarget = null;
-  _zoomTarget = null;
+  _animationStart!: number;
+  _animationEnd!: number;
+  _centerTarget!: TPoint;
+  _zoomTarget!: number;
 
   // When users are using uncontrolled components we have to keep this
   // so we can know if we should call onBoundsChanged
-  _lastZoom = this.props.defaultZoom ? this.props.defaultZoom : this.props.zoom;
-  _lastCenter = this.props.defaultCenter
+  _lastZoom =
+    (this.props.defaultZoom ? this.props.defaultZoom : this.props.zoom) || 0;
+  _lastCenter = (this.props.defaultCenter
     ? this.props.defaultCenter
-    : this.props.center;
+    : this.props.center) || [0, 0];
   _boundsSynced = false;
-  _minMaxCache = null;
+  _minMaxCache!: [number, number, number, TMinMax];
 
   // ref
   _el = React.createRef<HTMLDivElement>();
 
-  state = {
-    zoom: this._lastZoom,
-    center: this._lastCenter,
-    width: this.props.width || this.props.defaultWidth,
-    height: this.props.height || this.props.defaultHeight,
+  state: MapState = {
+    zoom: this._lastZoom || 0,
+    center: this._lastCenter || [0, 0],
+    width: this.props.width || this.props.defaultWidth || 0,
+    height: this.props.height || this.props.defaultHeight || 0,
     zoomDelta: 0,
     pixelDelta: null,
     oldTiles: [],
     showWarning: false,
     warningType: null,
-    dragManager: DragManager(this._el),
+    dragManager: dragManager(this._el),
     latLngToPixel: (
       latLng: TPoint,
       center = this.state.center,
@@ -236,13 +251,13 @@ export default class Map extends Component<MapProps> {
       ];
     }
   };
-  _animFrame: number;
-  _centerStart: any[];
+  _animFrame!: number;
+  _centerStart!: TPoint;
   _zoomStart: any;
   _zoomAround: any;
-  _loadTracker: {};
-  _touchStartMidPoint: TPoint;
-  _touchStartDistance: number;
+  _loadTracker!: Record<string, boolean>;
+  _touchStartMidPoint!: TPoint;
+  _touchStartDistance!: number;
   _secondTouchEnd: any;
   _lastWheel: any;
   _warningClearTimeout: any;
@@ -326,12 +341,12 @@ export default class Map extends Component<MapProps> {
     wre("resize", this.updateWidthHeight);
   }
 
-  componentWillReceiveProps(nextProps) {
+  componentWillReceiveProps(nextProps: MapProps) {
     if (nextProps.mouseEvents !== this.props.mouseEvents)
-      this.bindMouseEvents(nextProps.mouseEvents);
+      this.bindMouseEvents(!!nextProps.mouseEvents);
 
     if (nextProps.touchEvents !== this.props.touchEvents)
-      this.bindTouchEvents(nextProps.touchEvents);
+      this.bindTouchEvents(!!nextProps.touchEvents);
 
     if (nextProps.width && nextProps.width !== this.props.width)
       this.setState({ width: nextProps.width });
@@ -345,7 +360,8 @@ export default class Map extends Component<MapProps> {
     }
     if (
       (!nextProps.center ||
-        (nextProps.center[0] === this.props.center[0] &&
+        (this.props.center &&
+          nextProps.center[0] === this.props.center[0] &&
           nextProps.center[1] === this.props.center[1])) &&
       nextProps.zoom === this.props.zoom
     ) {
@@ -372,10 +388,10 @@ export default class Map extends Component<MapProps> {
   }
 
   setCenterZoomTarget = (
-    center,
-    zoom,
+    center: TPoint,
+    zoom: number,
     fromProps = false,
-    zoomAround = null,
+    zoomAround: TPoint | null = null,
     animationDuration = ANIMATION_TIME
   ) => {
     if (
@@ -412,6 +428,7 @@ export default class Map extends Component<MapProps> {
         this._zoomAround = zoomAround;
         this._centerTarget = this.calculateZoomCenter(
           this._lastCenter,
+          // @ts-ignore
           zoomAround,
           this._lastZoom,
           zoom
@@ -429,6 +446,7 @@ export default class Map extends Component<MapProps> {
       if (zoomAround) {
         const center = this.calculateZoomCenter(
           this._lastCenter,
+          // @ts-ignore
           zoomAround,
           this._lastZoom,
           zoom
@@ -440,7 +458,12 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  distanceInScreens = (centerTarget, zoomTarget, center, zoom) => {
+  distanceInScreens = (
+    centerTarget: TPoint,
+    zoomTarget: number,
+    center: TPoint,
+    zoom: number
+  ) => {
     const { width, height } = this.state;
 
     // distance in pixels at the current zoom level
@@ -459,7 +482,7 @@ export default class Map extends Component<MapProps> {
     return Math.sqrt(w * w + h * h);
   };
 
-  animationStep = timestamp => {
+  animationStep = (timestamp: number) => {
     const length = this._animationEnd - this._animationStart;
     const progress = Math.max(timestamp - this._animationStart, 0);
     const percentage = easeOutQuad(progress / length);
@@ -477,7 +500,7 @@ export default class Map extends Component<MapProps> {
 
       return { centerStep, zoomStep };
     } else {
-      const centerStep = [
+      const centerStep: TPoint = [
         this._centerStart[0] +
           (this._centerTarget[0] - this._centerStart[0]) * percentage,
         this._centerStart[1] +
@@ -488,7 +511,7 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  animate = timestamp => {
+  animate = (timestamp: number) => {
     if (timestamp >= this._animationEnd) {
       this._isAnimating = false;
       this.setCenterZoom(this._centerTarget, this._zoomTarget, true);
@@ -508,7 +531,7 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  limitCenterAtZoom = (center, zoom): TPoint => {
+  limitCenterAtZoom = (center: TPoint, zoom: number): TPoint => {
     // [minLat, maxLat, minLng, maxLng]
     const minMax = this.getBoundsMinMax(zoom || this.state.zoom);
 
@@ -539,7 +562,7 @@ export default class Map extends Component<MapProps> {
   };
 
   // main logic when changing coordinates
-  setCenterZoom = (center, zoom, animationEnded = false) => {
+  setCenterZoom = (center: TPoint, zoom: number, animationEnded = false) => {
     const limitedCenter = this.limitCenterAtZoom(center, zoom);
 
     if (Math.round(this.state.zoom) !== Math.round(zoom)) {
@@ -561,7 +584,7 @@ export default class Map extends Component<MapProps> {
         NOOP
       );
 
-      let loadTracker = {};
+      let loadTracker: Record<string, boolean> = {};
 
       for (let x = nextValues.tileMinX; x <= nextValues.tileMaxX; x++) {
         for (let y = nextValues.tileMinY; y <= nextValues.tileMaxY; y++) {
@@ -591,7 +614,7 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  getBoundsMinMax = zoom => {
+  getBoundsMinMax = (zoom: number) => {
     if (this.props.limitBounds === "center") {
       return absoluteMinMax;
     }
@@ -621,14 +644,14 @@ export default class Map extends Component<MapProps> {
         : tile2lng(Math.pow(2, zoom) - width / 512, zoom); // x
     const maxLat = height > pixelsAtZoom ? 0 : tile2lat(height / 512, zoom); // y
 
-    const minMax = [minLat, maxLat, minLng, maxLng];
+    const minMax: TMinMax = [minLat, maxLat, minLng, maxLng];
 
     this._minMaxCache = [zoom, width, height, minMax];
 
     return minMax;
   };
 
-  imageLoaded = key => {
+  imageLoaded = (key: string) => {
     if (this._loadTracker && key in this._loadTracker) {
       this._loadTracker[key] = true;
 
@@ -654,13 +677,13 @@ export default class Map extends Component<MapProps> {
       return false;
     }
 
-    const pos = parentPosition(this._el.current);
+    const pos = parentPosition(this._el.current!);
     const element = document.elementFromPoint(
       pixel[0] + pos.x,
       pixel[1] + pos.y
     );
 
-    return this._el.current === element || this._el.current.contains(element);
+    return this._el.current === element || this._el.current!.contains(element);
   }
 
   handleTouchStart = (event: TouchEvent) => {
@@ -858,9 +881,10 @@ export default class Map extends Component<MapProps> {
   };
 
   handleDblClick = (event: React.MouseEvent) => {
-    const pixel = getMousePixel(this._el.current, event.nativeEvent);
+    const pixel = getMousePixel(this._el.current!, event.nativeEvent);
     const latLngNow = this.pixelToLatLng(pixel);
     this.setCenterZoomTarget(
+      //@ts-ignore
       null,
       Math.max(
         this.props.minZoom,
@@ -948,7 +972,7 @@ export default class Map extends Component<MapProps> {
     this._moveEvents = [];
   };
 
-  trackMoveEvents = coords => {
+  trackMoveEvents = (coords: TPoint) => {
     console.log("track", coords);
 
     const timestamp = window.performance.now();
@@ -966,7 +990,7 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  throwAfterMoving = (coords, center, zoom) => {
+  throwAfterMoving = (coords: TPoint, center: TPoint, zoom: number) => {
     const { width, height } = this.state;
     const { animate } = this.props;
 
@@ -1082,7 +1106,7 @@ export default class Map extends Component<MapProps> {
     }
   };
 
-  showWarning = warningType => {
+  showWarning = (warningType: any) => {
     if (!this.state.showWarning || this.state.warningType !== warningType) {
       this.setState({ showWarning: true, warningType });
     }
@@ -1099,7 +1123,7 @@ export default class Map extends Component<MapProps> {
   clearWarning = () =>
     this.state.showWarning && this.setState({ showWarning: false });
 
-  zoomAroundMouse = (zoomDiff, event) => {
+  zoomAroundMouse = (zoomDiff: number, event: MouseEvent | Touch) => {
     if (!this._el.current) {
       return;
     }
@@ -1125,6 +1149,7 @@ export default class Map extends Component<MapProps> {
     }
     zoomTarget = Math.max(minZoom, Math.min(zoomTarget, maxZoom));
 
+    //@ts-ignore
     this.setCenterZoomTarget(null, zoomTarget, false, latLngNow);
   };
 
@@ -1138,7 +1163,12 @@ export default class Map extends Component<MapProps> {
 
   latLngToPixel = this.state.latLngToPixel;
 
-  calculateZoomCenter = (center, coords, oldZoom, newZoom) => {
+  calculateZoomCenter = (
+    center: TPoint,
+    coords: TPoint,
+    oldZoom: number,
+    newZoom: number
+  ): TPoint => {
     const { width, height } = this.state;
 
     const pixelBefore = this.latLngToPixel(coords, center, oldZoom);
@@ -1158,7 +1188,14 @@ export default class Map extends Component<MapProps> {
 
   // data to display the tiles
 
-  tileValues(state) {
+  tileValues(state: {
+    center: TPoint;
+    zoom: number;
+    width: number;
+    height: number;
+    pixelDelta?: TPoint;
+    zoomDelta?: number;
+  }) {
     const { center, zoom, pixelDelta, zoomDelta, width, height } = state;
 
     const roundedZoom = Math.round(zoom + (zoomDelta || 0));
@@ -1315,6 +1352,7 @@ export default class Map extends Component<MapProps> {
                 left: tile.left,
                 top: tile.top,
                 willChange: "transform",
+                //@ts-ignore
                 transform: tile.transform,
                 transformOrigin: "top left",
                 opacity: 1
