@@ -8,7 +8,7 @@ import { Attributtion } from "./Attributtion";
 import { Marker } from "./Marker";
 import { Polygon } from "./Polygon";
 
-function Test(p) {
+function Test(p: any) {
   const map = useContext(MapContext);
 
   const [left, top] = map.latLngToPixel(p.anchor);

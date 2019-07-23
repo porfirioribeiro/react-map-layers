@@ -13,24 +13,26 @@ export function Attributtion({
     return null;
   }
 
-  const style = {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    fontSize: "11px",
-    padding: "2px 5px",
-    background: "rgba(255, 255, 255, 0.7)",
-    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
-    color: "#333"
-  };
-
   const linkStyle = {
     color: "#0078A8",
     textDecoration: "none"
   };
 
   return (
-    <div key="attr" className="pigeon-attribution" style={style}>
+    <div
+      key="attr"
+      className="pigeon-attribution"
+      style={{
+        position: "absolute",
+        bottom: 0,
+        right: 0,
+        fontSize: "11px",
+        padding: "2px 5px",
+        background: "rgba(255, 255, 255, 0.7)",
+        fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+        color: "#333"
+      }}
+    >
       {attributionPrefix === false ? null : (
         <span>
           {attributionPrefix || (

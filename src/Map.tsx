@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import React, { Component, CSSProperties } from "react";
 import { MapContext } from "./context";
 import { MapWarning } from "./MapWarning";
 import { DragManager } from "./dragManager";
@@ -77,44 +77,46 @@ function srcSet(dprs: number[], url: MapURL, x: number, y: number, z: number) {
 type TPoint = [number, number];
 
 interface MapProps {
-  center: TPoint;
-  defaultCenter: TPoint;
+  center?: TPoint;
+  defaultCenter?: TPoint;
 
-  zoom: number;
-  defaultZoom: number;
+  boxClassname?: string;
 
-  width: number;
-  defaultWidth: number;
+  zoom?: number;
+  defaultZoom?: number;
 
-  height: number;
-  defaultHeight: number;
+  width?: number;
+  defaultWidth?: number;
 
-  provider: () => void;
-  dprs: [];
-  children: React.ReactNode;
+  height?: number;
+  defaultHeight?: number;
 
-  animate: boolean;
-  animateMaxScreens: number;
+  provider?: () => string;
+  dprs?: [];
+  children?: React.ReactNode;
 
-  minZoom: number;
-  maxZoom: number;
+  animate?: boolean;
+  animateMaxScreens?: number;
 
-  metaWheelZoom: boolean;
-  metaWheelZoomWarning: string;
-  twoFingerDrag: boolean;
-  twoFingerDragWarning: string;
+  minZoom?: number;
+  maxZoom?: number;
 
-  zoomSnap: boolean;
-  mouseEvents: boolean;
-  touchEvents: boolean;
+  metaWheelZoom?: boolean;
+  metaWheelZoomWarning?: string;
+  twoFingerDrag?: boolean;
+  twoFingerDragWarning?: string;
 
-  onClick: () => void;
-  onBoundsChanged: () => void;
-  onAnimationStart: () => void;
-  onAnimationStop: () => void;
+  zoomSnap?: boolean;
+  mouseEvents?: boolean;
+  touchEvents?: boolean;
+
+  onClick?: (a: any) => void;
+  onBoundsChanged?: (a: any) => void;
+  onAnimationStart?: () => void;
+  onAnimationStop?: () => void;
 
   // will be set to "edge" from v0.12 onward, defaulted to "center" before
-  limitBounds: "center" | "edge";
+  limitBounds?: "center" | "edge";
 }
 
 const wae = window.addEventListener;
@@ -1272,7 +1274,7 @@ export default class Map extends Component<MapProps> {
       }
     }
 
-    const boxStyle = {
+    const boxStyle: CSSProperties = {
       width: scaleWidth,
       height: scaleHeight,
       position: "absolute",
@@ -1288,7 +1290,7 @@ export default class Map extends Component<MapProps> {
     const left = -((tileCenterX - tileMinX) * 256 - scaleWidth / 2);
     const top = -((tileCenterY - tileMinY) * 256 - scaleHeight / 2);
 
-    const tilesStyle = {
+    const tilesStyle: CSSProperties = {
       position: "absolute",
       width: (tileMaxX - tileMinX + 1) * 256,
       height: (tileMaxY - tileMinY + 1) * 256,

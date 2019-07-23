@@ -8,12 +8,8 @@ export interface DragManager {}
 
 export function DragManager(ref: RefObject<HTMLDivElement>) {
   let active = false;
-  let currentX;
-  let currentY;
-  let initialX;
-  let initialY;
-  let xOffset = 0;
-  let yOffset = 0;
+  let currentX: number;
+  let currentY: number;
 
   window.addEventListener("touchstart", dragStart, { passive: false });
   window.addEventListener("touchend", dragEnd, { passive: false });
@@ -34,14 +30,14 @@ export function DragManager(ref: RefObject<HTMLDivElement>) {
   }
 
   function mouseCoords(e: MouseEvent | TouchEvent): [number, number] {
-    const rect = ref.current.getBoundingClientRect();
+    const rect = ref.current!.getBoundingClientRect();
     const p = "touches" in e ? e.touches[0] : e;
 
     return [p.clientX - rect.left, p.clientY - rect.top];
   }
 
   function dragStart(e: MouseEvent | TouchEvent) {
-    if (ref.current.contains(e.target as HTMLElement)) {
+    if (ref.current!.contains(e.target as HTMLElement)) {
       active = true;
       const point = mouseCoords(e);
       trackMouse(point);
@@ -57,10 +53,10 @@ export function DragManager(ref: RefObject<HTMLDivElement>) {
 
       // console.log("drag", point);
 
-      setTranslate(currentX, currentY, ref.current);
+      setTranslate(currentX, currentY, ref.current!);
     }
   }
-  function dragEnd(e) {
+  function dragEnd(e: MouseEvent | TouchEvent) {
     if (active) {
       const point = mouseCoords(e);
       // console.log("end", point);
@@ -71,7 +67,7 @@ export function DragManager(ref: RefObject<HTMLDivElement>) {
 
   function trackMouse(point: [number, number]) {}
 
-  function setTranslate(xPos, yPos, el) {
+  function setTranslate(xPos: number, yPos: number, el: HTMLDivElement) {
     // console.log(xPos, yPos);
   }
 
