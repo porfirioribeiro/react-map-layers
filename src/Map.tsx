@@ -1,5 +1,6 @@
 import React, { Component, CSSProperties } from "react";
 import { MapContext } from "./context";
+import { MapWarning } from "./MapWarning";
 import { dragManager, DragManager } from "./dragManager";
 
 import { parentPosition, parentHasClass, debounce, easeOutQuad } from "./utils";
@@ -19,6 +20,7 @@ const MIN_DRAG_FOR_THROW = 40;
 const CLICK_TOLERANCE = 2;
 const DEBOUNCE_DELAY = 60;
 const PINCH_RELEASE_THROW_DELAY = 300;
+const WARNING_DISPLAY_TIMEOUT = 300;
 
 const NOOP = () => {};
 
@@ -72,6 +74,11 @@ interface MapProps {
   minZoom: number;
   maxZoom: number;
 
+  metaWheelZoom?: boolean;
+  metaWheelZoomWarning: string;
+  twoFingerDrag?: boolean;
+  twoFingerDragWarning: string;
+
   zoomSnap?: boolean;
   mouseEvents?: boolean;
   touchEvents?: boolean;
@@ -93,6 +100,8 @@ export interface MapState {
   zoomDelta: number;
   pixelDelta: null | any;
   oldTiles: any[];
+  showWarning: boolean;
+  warningType: null | any;
   dragManager: DragManager;
   latLngToPixel(latLng: TPoint, center?: TPoint, zoom?: number): TPoint;
   pixelToLatLng(latLng: TPoint, center?: TPoint, zoom?: number): TPoint;
@@ -103,6 +112,10 @@ const wre = window.removeEventListener;
 export default class Map extends Component<MapProps, MapState> {
   static defaultProps = {
     animate: true,
+    metaWheelZoom: false,
+    metaWheelZoomWarning: "Use META+wheel to zoom!",
+    twoFingerDrag: false,
+    twoFingerDragWarning: "Use two fingers to move the map",
     zoomSnap: true,
     mouseEvents: true,
     touchEvents: true,
@@ -150,7 +163,7 @@ export default class Map extends Component<MapProps, MapState> {
   _minMaxCache!: [number, number, number, TMinMax];
 
   // ref
-  container: HTMLDivElement | null = null;
+  _el = React.createRef<HTMLDivElement>();
 
   state: MapState = {
     zoom: this._lastZoom || 0,
@@ -160,7 +173,9 @@ export default class Map extends Component<MapProps, MapState> {
     zoomDelta: 0,
     pixelDelta: null,
     oldTiles: [],
-    dragManager: dragManager((center, zoom) => this.setState({ center, zoom })),
+    showWarning: false,
+    warningType: null,
+    dragManager: dragManager(this._el),
     latLngToPixel: (
       latLng: TPoint,
       center = this.state.center,
@@ -240,8 +255,8 @@ export default class Map extends Component<MapProps, MapState> {
   }
 
   updateWidthHeight = () => {
-    if (this.container) {
-      const rect = this.container.getBoundingClientRect();
+    if (this._el.current) {
+      const rect = this._el.current.getBoundingClientRect();
 
       if (rect && rect.width > 0 && rect.height > 0) {
         this.setState({
@@ -259,16 +274,16 @@ export default class Map extends Component<MapProps, MapState> {
       wae("mousedown", this.handleMouseDown);
       wae("mouseup", this.handleMouseUp);
       wae("mousemove", this.handleMouseMove);
-      if (this.container)
-        this.container.addEventListener("wheel", this.handleWheel, {
+      if (this._el.current)
+        this._el.current.addEventListener("wheel", this.handleWheel, {
           passive: false
         });
     } else {
       wre("mousedown", this.handleMouseDown);
       wre("mouseup", this.handleMouseUp);
       wre("mousemove", this.handleMouseMove);
-      if (this.container)
-        this.container.removeEventListener("wheel", this.handleWheel);
+      if (this._el.current)
+        this._el.current.removeEventListener("wheel", this.handleWheel);
     }
   }
 
@@ -636,17 +651,17 @@ export default class Map extends Component<MapProps, MapState> {
       return false;
     }
 
-    const pos = parentPosition(this.container!);
+    const pos = parentPosition(this._el.current!);
     const element = document.elementFromPoint(
       pixel[0] + pos.x,
       pixel[1] + pos.y
     );
 
-    return this.container === element || this.container!.contains(element);
+    return this._el.current === element || this._el.current!.contains(element);
   }
 
   handleTouchStart = (event: TouchEvent) => {
-    if (!this.container) {
+    if (!this._el.current) {
       return;
     }
     if (
@@ -657,13 +672,15 @@ export default class Map extends Component<MapProps, MapState> {
     }
     if (event.touches.length === 1) {
       const touch = event.touches[0];
-      const pixel = getMousePixel(this.container, touch);
+      const pixel = getMousePixel(this._el.current, touch);
 
       if (this.coordsInside(pixel)) {
         this._touchStartPixel = [pixel];
 
-        this.stopAnimating();
-        this.trackMoveEvents(pixel);
+        if (!this.props.twoFingerDrag) {
+          this.stopAnimating();
+          this.trackMoveEvents(pixel);
+        }
       }
       // added second finger and first one was in the area
     } else if (event.touches.length === 2 && this._touchStartPixel) {
@@ -675,8 +692,8 @@ export default class Map extends Component<MapProps, MapState> {
         this.sendDeltaChange();
       }
 
-      const t1 = getMousePixel(this.container, event.touches[0]);
-      const t2 = getMousePixel(this.container, event.touches[1]);
+      const t1 = getMousePixel(this._el.current, event.touches[0]);
+      const t2 = getMousePixel(this._el.current, event.touches[1]);
 
       this._touchStartPixel = [t1, t2];
       this._touchStartMidPoint = [(t1[0] + t2[0]) / 2, (t1[1] + t2[1]) / 2];
@@ -687,33 +704,39 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleTouchMove = (event: TouchEvent) => {
-    if (!this.container) {
+    if (!this._el.current) {
       this._touchStartPixel = null;
       return;
     }
     if (event.touches.length === 1 && this._touchStartPixel) {
       const touch = event.touches[0];
-      const pixel = getMousePixel(this.container, touch);
+      const pixel = getMousePixel(this._el.current, touch);
 
-      event.preventDefault();
-      this.trackMoveEvents(pixel);
+      if (this.props.twoFingerDrag) {
+        if (this.coordsInside(pixel)) {
+          this.showWarning("fingers");
+        }
+      } else {
+        event.preventDefault();
+        this.trackMoveEvents(pixel);
 
-      this.setState(
-        {
-          pixelDelta: [
-            pixel[0] - this._touchStartPixel[0][0],
-            pixel[1] - this._touchStartPixel[0][1]
-          ]
-        },
-        NOOP
-      );
+        this.setState(
+          {
+            pixelDelta: [
+              pixel[0] - this._touchStartPixel[0][0],
+              pixel[1] - this._touchStartPixel[0][1]
+            ]
+          },
+          NOOP
+        );
+      }
     } else if (event.touches.length === 2 && this._touchStartPixel) {
       const { width, height, zoom } = this.state;
 
       event.preventDefault();
 
-      const t1 = getMousePixel(this.container, event.touches[0]);
-      const t2 = getMousePixel(this.container, event.touches[1]);
+      const t1 = getMousePixel(this._el.current, event.touches[0]);
+      const t2 = getMousePixel(this._el.current, event.touches[1]);
 
       const midPoint = [(t1[0] + t2[0]) / 2, (t1[1] + t2[1]) / 2];
       const midPointDiff = [
@@ -754,47 +777,49 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleTouchEnd = (event: TouchEvent) => {
-    console.log("touchend in map");
-
-    if (!this.container) {
+    if (!this._el.current) {
       this._touchStartPixel = null;
       return;
     }
     if (this._touchStartPixel) {
-      const { zoomSnap, minZoom, maxZoom } = this.props;
+      const { zoomSnap, twoFingerDrag, minZoom, maxZoom } = this.props;
       const { zoomDelta } = this.state;
       const { center, zoom } = this.sendDeltaChange();
 
       if (event.touches.length === 0) {
-        // if the click started and ended at about
-        // the same place we can view it as a click
-        // and not prevent default behavior.
-        const oldTouchPixel = this._touchStartPixel[0];
-        const newTouchPixel = getMousePixel(
-          this.container,
-          event.changedTouches[0]
-        );
+        if (twoFingerDrag) {
+          this.clearWarning();
+        } else {
+          // if the click started and ended at about
+          // the same place we can view it as a click
+          // and not prevent default behavior.
+          const oldTouchPixel = this._touchStartPixel[0];
+          const newTouchPixel = getMousePixel(
+            this._el.current,
+            event.changedTouches[0]
+          );
 
-        if (
-          Math.abs(oldTouchPixel[0] - newTouchPixel[0]) > CLICK_TOLERANCE ||
-          Math.abs(oldTouchPixel[1] - newTouchPixel[1]) > CLICK_TOLERANCE
-        ) {
-          // don't throw immediately after releasing the second finger
           if (
-            !this._secondTouchEnd ||
-            window.performance.now() - this._secondTouchEnd >
-              PINCH_RELEASE_THROW_DELAY
+            Math.abs(oldTouchPixel[0] - newTouchPixel[0]) > CLICK_TOLERANCE ||
+            Math.abs(oldTouchPixel[1] - newTouchPixel[1]) > CLICK_TOLERANCE
           ) {
-            event.preventDefault();
-            this.throwAfterMoving(newTouchPixel, center, zoom);
+            // don't throw immediately after releasing the second finger
+            if (
+              !this._secondTouchEnd ||
+              window.performance.now() - this._secondTouchEnd >
+                PINCH_RELEASE_THROW_DELAY
+            ) {
+              event.preventDefault();
+              this.throwAfterMoving(newTouchPixel, center, zoom);
+            }
           }
-        }
 
-        this._touchStartPixel = null;
-        this._secondTouchEnd = null;
+          this._touchStartPixel = null;
+          this._secondTouchEnd = null;
+        }
       } else if (event.touches.length === 1) {
         event.preventDefault();
-        const touch = getMousePixel(this.container, event.touches[0]);
+        const touch = getMousePixel(this._el.current, event.touches[0]);
 
         this._secondTouchEnd = window.performance.now();
         this._touchStartPixel = [touch];
@@ -806,11 +831,21 @@ export default class Map extends Component<MapProps, MapState> {
             ? this.pixelToLatLng(this._touchStartMidPoint)
             : this.state.center;
 
-          let zoomTarget =
-            zoomDelta > 0
-              ? Math.ceil(this.state.zoom)
-              : Math.floor(this.state.zoom);
+          let zoomTarget;
 
+          // do not zoom up/down if we must drag with 2 fingers and didn't change the zoom level
+          if (
+            twoFingerDrag &&
+            Math.round(this.state.zoom) ===
+              Math.round(this.state.zoom + zoomDelta)
+          ) {
+            zoomTarget = Math.round(this.state.zoom);
+          } else {
+            zoomTarget =
+              zoomDelta > 0
+                ? Math.ceil(this.state.zoom)
+                : Math.floor(this.state.zoom);
+          }
           const zoom = Math.max(minZoom, Math.min(zoomTarget, maxZoom));
 
           this.setCenterZoomTarget(latLng, zoom, false, latLng);
@@ -820,7 +855,7 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleDblClick = (event: React.MouseEvent) => {
-    const pixel = getMousePixel(this.container!, event.nativeEvent);
+    const pixel = getMousePixel(this._el.current!, event.nativeEvent);
     const latLngNow = this.pixelToLatLng(pixel);
     this.setCenterZoomTarget(
       //@ts-ignore
@@ -835,10 +870,10 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleMouseDown = (event: MouseEvent) => {
-    if (!this.container) {
+    if (!this._el.current) {
       return;
     }
-    const pixel = getMousePixel(this.container, event);
+    const pixel = getMousePixel(this._el.current, event);
     // console.log("mousedown", event.target);
 
     if (
@@ -857,10 +892,10 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleMouseMove = (event: MouseEvent) => {
-    if (!this.container) {
+    if (!this._el.current) {
       return;
     }
-    const _mousePosition = getMousePixel(this.container, event);
+    const _mousePosition = getMousePixel(this._el.current, event);
 
     if (this._mouseDown && this._dragStart) {
       this.trackMoveEvents(_mousePosition);
@@ -877,7 +912,7 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleMouseUp = (event: MouseEvent) => {
-    if (!this.container) {
+    if (!this._el.current) {
       this._mouseDown = false;
       return;
     }
@@ -886,7 +921,7 @@ export default class Map extends Component<MapProps, MapState> {
     if (this._mouseDown) {
       this._mouseDown = false;
 
-      const pixel = getMousePixel(this.container, event);
+      const pixel = getMousePixel(this._el.current, event);
 
       if (
         this.props.onClick &&
@@ -912,7 +947,7 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   trackMoveEvents = (coords: TPoint) => {
-    // console.log("track", coords);
+    console.log("track", coords);
 
     const timestamp = window.performance.now();
 
@@ -920,7 +955,7 @@ export default class Map extends Component<MapProps, MapState> {
       this._moveEvents.length === 0 ||
       timestamp - this._moveEvents[this._moveEvents.length - 1].timestamp > 40
     ) {
-      // console.log("trackin", coords);
+      console.log("trackin", coords);
 
       this._moveEvents.push({ timestamp, coords });
       if (this._moveEvents.length > 2) {
@@ -1013,42 +1048,63 @@ export default class Map extends Component<MapProps, MapState> {
   };
 
   handleWheel = (event: WheelEvent) => {
-    const { mouseEvents, zoomSnap, animate } = this.props;
+    const { mouseEvents, metaWheelZoom, zoomSnap, animate } = this.props;
 
     if (!mouseEvents) {
       return;
     }
 
-    event.preventDefault();
+    if (!metaWheelZoom || event.metaKey) {
+      event.preventDefault();
 
-    const addToZoom = -event.deltaY / SCROLL_PIXELS_FOR_ZOOM_LEVEL;
+      const addToZoom = -event.deltaY / SCROLL_PIXELS_FOR_ZOOM_LEVEL;
 
-    if (!zoomSnap && this._zoomTarget) {
-      const stillToAdd = this._zoomTarget - this.state.zoom;
-      this.zoomAroundMouse(addToZoom + stillToAdd, event);
-    } else {
-      if (animate) {
-        this.zoomAroundMouse(addToZoom, event);
+      if (!zoomSnap && this._zoomTarget) {
+        const stillToAdd = this._zoomTarget - this.state.zoom;
+        this.zoomAroundMouse(addToZoom + stillToAdd, event);
       } else {
-        if (
-          !this._lastWheel ||
-          window.performance.now() - this._lastWheel > ANIMATION_TIME
-        ) {
-          this._lastWheel = window.performance.now();
+        if (animate) {
           this.zoomAroundMouse(addToZoom, event);
+        } else {
+          if (
+            !this._lastWheel ||
+            window.performance.now() - this._lastWheel > ANIMATION_TIME
+          ) {
+            this._lastWheel = window.performance.now();
+            this.zoomAroundMouse(addToZoom, event);
+          }
         }
       }
+    } else {
+      this.showWarning("wheel");
     }
   };
 
+  showWarning = (warningType: any) => {
+    if (!this.state.showWarning || this.state.warningType !== warningType) {
+      this.setState({ showWarning: true, warningType });
+    }
+
+    if (this._warningClearTimeout) {
+      window.clearTimeout(this._warningClearTimeout);
+    }
+    this._warningClearTimeout = window.setTimeout(
+      this.clearWarning,
+      WARNING_DISPLAY_TIMEOUT
+    );
+  };
+
+  clearWarning = () =>
+    this.state.showWarning && this.setState({ showWarning: false });
+
   zoomAroundMouse = (zoomDiff: number, event: MouseEvent | Touch) => {
-    if (!this.container) {
+    if (!this._el.current) {
       return;
     }
     const { zoom } = this.state;
     const { minZoom, maxZoom, zoomSnap } = this.props;
 
-    const _mousePosition = getMousePixel(this.container, event);
+    const _mousePosition = getMousePixel(this._el.current, event);
 
     if (
       !_mousePosition ||
@@ -1159,7 +1215,7 @@ export default class Map extends Component<MapProps, MapState> {
   renderTiles() {
     const { oldTiles } = this.state;
     const { dprs } = this.props;
-    const mapProvider = this.props.provider || wikimedia;
+    const mapUrl = this.props.provider || wikimedia;
 
     const {
       tileMinX,
@@ -1197,8 +1253,8 @@ export default class Map extends Component<MapProps, MapState> {
         for (let y = yMin; y <= yMax; y++) {
           tiles.push({
             key: `${x}-${y}-${old.roundedZoom}`,
-            url: mapProvider(x, y, old.roundedZoom),
-            srcSet: srcSet(dprs, mapProvider, x, y, old.roundedZoom),
+            url: mapUrl(x, y, old.roundedZoom),
+            srcSet: srcSet(dprs, mapUrl, x, y, old.roundedZoom),
             left: xDiff + (x - old.tileMinX) * 256 * pow,
             top: yDiff + (y - old.tileMinY) * 256 * pow,
             width: 256 * pow,
@@ -1218,8 +1274,8 @@ export default class Map extends Component<MapProps, MapState> {
       for (let y = yMin; y <= yMax; y++) {
         tiles.push({
           key: `${x}-${y}-${roundedZoom}`,
-          url: mapProvider(x, y, roundedZoom),
-          srcSet: srcSet(dprs, mapProvider, x, y, roundedZoom),
+          url: mapUrl(x, y, roundedZoom),
+          srcSet: srcSet(dprs, mapUrl, x, y, roundedZoom),
           left: (x - tileMinX) * 256,
           top: (y - tileMinY) * 256,
           width: 256,
@@ -1282,15 +1338,15 @@ export default class Map extends Component<MapProps, MapState> {
     );
   }
 
-  setRef = (e: HTMLDivElement | null) => {
-    this.container = e;
-    if (e) this.state.dragManager.init(e);
-    else this.state.dragManager.dispose();
-  };
-
   render() {
-    const { width, height } = this.state;
-    const hasSize = !!(width && height);
+    const {
+      touchEvents,
+      twoFingerDrag,
+      metaWheelZoom,
+      metaWheelZoomWarning,
+      twoFingerDragWarning
+    } = this.props;
+    const { width, height, showWarning, warningType } = this.state;
 
     const containerStyle: React.CSSProperties = {
       width: this.props.width ? width : "100%",
@@ -1298,19 +1354,33 @@ export default class Map extends Component<MapProps, MapState> {
       position: "relative",
       display: "inline-block",
       overflow: "hidden",
-      background: "#dddddd"
+      background: "#dddddd",
+      touchAction: touchEvents
+        ? twoFingerDrag
+          ? "pan-x pan-y"
+          : "none"
+        : "auto"
     };
 
+    const hasSize = !!(width && height);
 
     return (
       <MapContext.Provider value={this.state}>
         <div
           style={containerStyle}
-          ref={this.setRef}
+          ref={this._el}
           onDoubleClick={this.handleDblClick}
         >
           {hasSize && this.renderTiles()}
           {this.props.children}
+          {metaWheelZoom || twoFingerDrag ? (
+            <MapWarning
+              showWarning={showWarning}
+              warningType={warningType}
+              twoFingerDragWarning={twoFingerDragWarning}
+              metaWheelZoomWarning={metaWheelZoomWarning}
+            />
+          ) : null}
         </div>
       </MapContext.Provider>
     );
