@@ -5,6 +5,7 @@ export function debounce(func: DebounceFn, wait: number) {
   return function(this: any, ...args: any[]) {
     const context = this;
     clearTimeout(timeout);
+    // @ts-ignore
     timeout = setTimeout(() => func.apply(context, args), wait);
   };
 }

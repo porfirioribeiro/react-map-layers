@@ -54,7 +54,7 @@ export function dragManager(ref: RefObject<HTMLDivElement>) {
   }
   function dragEnd(e: MouseEvent | TouchEvent) {
     if (active) {
-      const point = mouseCoords(e);
+      // const point = mouseCoords(e);
       // console.log("end", point);
 
       active = false;

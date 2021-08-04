@@ -90,7 +90,7 @@ interface MapProps {
   height?: number;
   defaultHeight?: number;
 
-  provider?: () => string;
+  provider?: (x: number, y: number, z: number, dpr?:number) => string;
   dprs: number[];
   children?: React.ReactNode;
 
