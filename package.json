@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "",
   "keywords": [],
+  "engines": {
+    "node": ">=2.0.0 <15"
+  },
   "scripts": {
     "dev": "vite",
     "start": "vite --open",
