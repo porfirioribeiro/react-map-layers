@@ -71,7 +71,7 @@ function srcSet(dprs: number[], url: MapURL, x: number, y: number, z: number) {
   if (!dprs || dprs.length === 0) return "";
 
   return dprs
-    .map(dpr => url(x, y, z, dpr) + (dpr === 1 ? "" : ` ${dpr}x`))
+    .map((dpr) => url(x, y, z, dpr) + (dpr === 1 ? "" : ` ${dpr}x`))
     .join(", ");
 }
 
@@ -578,7 +578,7 @@ export default class Map extends Component<MapProps, MapState> {
       this.setState(
         {
           oldTiles: oldTiles
-            .filter(o => o.roundedZoom !== tileValues.roundedZoom)
+            .filter((o) => o.roundedZoom !== tileValues.roundedZoom)
             .concat(tileValues)
         },
         NOOP
@@ -656,7 +656,7 @@ export default class Map extends Component<MapProps, MapState> {
       this._loadTracker[key] = true;
 
       const unloadedCount = Object.keys(this._loadTracker).filter(
-        k => !this._loadTracker[k]
+        (k) => !this._loadTracker[k]
       ).length;
 
       if (unloadedCount === 0) {
@@ -1338,7 +1338,7 @@ export default class Map extends Component<MapProps, MapState> {
     return (
       <div style={boxStyle} className={boxClassname}>
         <div style={tilesStyle}>
-          {tiles.map(tile => (
+          {tiles.map((tile) => (
             <img
               alt=""
               key={tile.key}

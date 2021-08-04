@@ -7,6 +7,7 @@ import { MapContext } from "./context";
 import { Attributtion } from "./Attributtion";
 import { Marker } from "./Marker";
 import { Polygon } from "./Polygon";
+import { osm } from "./providers";
 
 function Test(p: any) {
   const map = useContext(MapContext);
@@ -23,11 +24,13 @@ function Test(p: any) {
 function App() {
   return (
     <div className="App">
+      <div>Trying to modernize a bit more Pigeon maps</div>
       <Map
         defaultCenter={[50.879, 4.6997]}
         defaultZoom={12}
         width={600}
         height={400}
+        provider={osm}
       >
         <Test anchor={[50.879, 4.6997]} />
         <svg
