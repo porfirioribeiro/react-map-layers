@@ -3,15 +3,8 @@ import { MapContext } from "./context";
 import { MapWarning } from "./MapWarning";
 import { dragManager, DragManager } from "./dragManager";
 
-import { parentPosition, parentHasClass, debounce, easeOutQuad } from "./utils";
+import { parentPosition, parentHasClass, debounce } from "./utils";
 import { TPoint, TMinMax } from "./types";
-import {
-  lng2tile,
-  lat2tile,
-  absoluteMinMax,
-  tile2lng,
-  tile2lat
-} from "./coordinates";
 
 const ANIMATION_TIME = 300;
 const DIAGONAL_THROW_TIME = 1500;
@@ -36,10 +29,43 @@ function wikimedia(x: number, y: number, z: number, dpr?: number) {
   }.png`;
 }
 
+// https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
+const lng2tile = (lon: number, zoom: number) =>
+  ((lon + 180) / 360) * Math.pow(2, zoom);
+const lat2tile = (lat: number, zoom: number) =>
+  ((1 -
+    Math.log(
+      Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)
+    ) /
+      Math.PI) /
+    2) *
+  Math.pow(2, zoom);
+
+function tile2lng(x: number, z: number) {
+  return (x / Math.pow(2, z)) * 360 - 180;
+}
+
+function tile2lat(y: number, z: number) {
+  var n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
 function getMousePixel(dom: HTMLElement, event: MouseEvent | Touch): TPoint {
   const parent = parentPosition(dom);
   return [event.clientX - parent.x, event.clientY - parent.y];
 }
+
+function easeOutQuad(t: number) {
+  return t * (2 - t);
+}
+
+// minLat, maxLat, minLng, maxLng
+const absoluteMinMax = [
+  tile2lat(Math.pow(2, 10), 10),
+  tile2lat(0, 10),
+  tile2lng(0, 10),
+  tile2lng(Math.pow(2, 10), 10)
+];
 
 function srcSet(dprs: number[], url: MapURL, x: number, y: number, z: number) {
   if (!dprs || dprs.length === 0) return "";

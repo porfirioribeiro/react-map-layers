@@ -21,7 +21,3 @@ export function parentPosition(element: HTMLElement) {
   const rect = element.getBoundingClientRect();
   return { x: rect.left, y: rect.top };
 }
-
-export function easeOutQuad(t: number) {
-  return t * (2 - t);
-}
